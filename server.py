@@ -3,77 +3,36 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# 🔹 ДАННЫЕ TRELLO
+# 🔹 Данные Trello и Telegram
 TRELLO_API_KEY = "5880197335c3d727693408202c68375d"
 TRELLO_TOKEN = "ATTA1ea4c6edf0b2892fec32580ab1417a42f521cd70c11af1453ddd0a4956e72896C175BE4E"
 TRELLO_LIST_ID = "67c19cd6641117e44ae95227"
 TELEGRAM_BOT_TOKEN = "7788946008:AAGULYh-GIkpr-GA3ZA70ERdCAT6BcGNW-g"
 CHAT_ID = "-1002307069728"
 
-# 🔹 Функция отправки заявки в Trello
-def create_trello_card(name, course, age, city):
-    url = "https://api.trello.com/1/cards"
-    query = {
-        "name": f"Заявка от {name}",
-        "desc": f"Курс: {course}\nВозраст: {age}\nГород: {city}",
-        "idList": TRELLO_LIST_ID,
-        "key": TRELLO_API_KEY,
-        "token": TRELLO_TOKEN
-    }
-    response = requests.post(url, params=query)
-    return response.status_code, response.json()
+# 🔹 Базовый URL API Trello
+TRELLO_BASE_URL = "https://api.trello.com/1"
 
-# 🔹 Функция поиска заявки
-def find_trello_card(name):
-    url = f"https://api.trello.com/1/lists/{TRELLO_LIST_ID}/cards"
+# 🔹 Функция для поиска карточки по имени
+def find_card(name):
+    url = f"{TRELLO_BASE_URL}/lists/{TRELLO_LIST_ID}/cards"
     query = {"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
     response = requests.get(url, params=query)
-
+    
     if response.status_code == 200:
         cards = response.json()
         for card in cards:
-            if card["name"].lower() == f"заявка от {name}".lower():
-                return card
-    return None
+            if card["name"].lower() == f"заявка от {name.lower()}":
+                return card["id"], card.get("desc", "")
+    return None, None
 
-# 🔹 Функция обновления заявки
-def update_trello_card(name, field, new_value):
-    card = find_trello_card(name)
-    if not card:
-        return False, "Заявка не найдена."
-
-    # Изменяем только нужное поле, сохраняя остальные данные
-    desc_lines = card["desc"].split("\n")
-    new_desc = []
-    updated = False
-
-    for line in desc_lines:
-        if field in line.lower():
-            new_desc.append(f"{field.capitalize()}: {new_value}")
-            updated = True
-        else:
-            new_desc.append(line)
-
-    if not updated:
-        return False, f"Поле {field} не найдено в заявке."
-
-    url = f"https://api.trello.com/1/cards/{card['id']}"
-    query = {"desc": "\n".join(new_desc), "key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
-    response = requests.put(url, params=query)
-
-    if response.status_code == 200:
-        send_telegram_message(f"✅ Данные обновлены! В заявке '{name}' изменено поле '{field}' на '{new_value}'.")
-        return True, f"Данные обновлены: {field} → {new_value}"
-    else:
-        return False, "Ошибка при обновлении заявки."
-
-# 🔹 Функция отправки сообщений в Telegram
-def send_telegram_message(text):
+# 🔹 Функция для отправки сообщений в Telegram
+def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    params = {"chat_id": CHAT_ID, "text": text}
-    requests.post(url, params=params)
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    requests.post(url, json=payload)
 
-# 🔹 API-эндпоинт для отправки заявки
+# 🔹 Функция для создания заявки
 @app.route("/send_to_trello", methods=["POST"])
 def send_to_trello():
     data = request.json
@@ -83,29 +42,67 @@ def send_to_trello():
     city = data.get("city")
 
     if not all([name, course, age, city]):
-        return jsonify({"error": "Не все данные заполнены"}), 400
+        return "Ошибка: не все данные заполнены", 400
 
-    status, response = create_trello_card(name, course, age, city)
+    card_id, _ = find_card(name)
+    if card_id:
+        return "Ошибка: заявка с таким именем уже существует", 400
 
-    if status == 200:
-        send_telegram_message(f"✅ Новая заявка от {name} успешно добавлена в Trello!")
-        return "Заявка успешно отправлена в Trello"
+    url = f"{TRELLO_BASE_URL}/cards"
+    query = {
+        "name": f"Заявка от {name}",
+        "desc": f"Курс: {course}\nВозраст: {age}\nГород: {city}",
+        "idList": TRELLO_LIST_ID,
+        "key": TRELLO_API_KEY,
+        "token": TRELLO_TOKEN
+    }
+    response = requests.post(url, params=query)
+
+    if response.status_code == 200:
+        send_telegram_message(f"✅ *Новая заявка* от {name} успешно добавлена в Trello!")
+        return f"Заявка от {name} успешно добавлена", 200
     else:
-        return "Ошибка при создании заявки в Trello"
+        return "Ошибка при создании заявки", 500
 
-# 🔹 API-эндпоинт для обновления заявки
+# 🔹 Функция для обновления заявки
 @app.route("/update_trello", methods=["POST"])
 def update_trello():
     data = request.json
     name = data.get("name")
-    field = data.get("field").lower()
+    field = data.get("field")
     new_value = data.get("new_value")
 
     if not all([name, field, new_value]):
-        return jsonify({"error": "Не все данные переданы"}), 400
+        return "Ошибка: не все данные переданы", 400
 
-    success, message = update_trello_card(name, field, new_value)
-    return message if success else message
+    card_id, old_desc = find_card(name)
+    if not card_id:
+        return f"Заявка с именем '{name}' не найдена", 400
+
+    # Обновление конкретного поля в описании заявки
+    updated_desc = []
+    field_updated = False
+    for line in old_desc.split("\n"):
+        if line.startswith(f"{field.capitalize()}:"):
+            updated_desc.append(f"{field.capitalize()}: {new_value}")
+            field_updated = True
+        else:
+            updated_desc.append(line)
+
+    if not field_updated:
+        updated_desc.append(f"{field.capitalize()}: {new_value}")
+
+    new_desc = "\n".join(updated_desc)
+
+    url = f"{TRELLO_BASE_URL}/cards/{card_id}"
+    query = {"desc": new_desc, "key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
+    response = requests.put(url, params=query)
+
+    if response.status_code == 200:
+        send_telegram_message(f"🟢 *Обновление заявки*\nИмя: {name}\n✏ Изменено: {field} → {new_value}")
+        return f"Заявка '{name}' успешно обновлена. {field.capitalize()} изменен на {new_value}", 200
+    else:
+        return "Ошибка при обновлении заявки", 500
 
 # 🔹 Запуск сервера
 if __name__ == "__main__":
