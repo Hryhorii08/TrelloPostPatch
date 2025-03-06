@@ -34,7 +34,8 @@ def send_to_trello():
     city = data.get("city")
 
     if not all([name, course, age, city]):
-        return json.dumps({"error": "Не все данные заполнены"}), 400, {'Content-Type': 'application/json'}
+        response = {"error": "Не все данные заполнены"}
+        return json.dumps(response), 400, {'Content-Type': 'application/json'}
 
     # Создание карточки в Trello
     query = {
@@ -48,9 +49,11 @@ def send_to_trello():
 
     if response.status_code == 200:
         send_telegram_message(f"✅ *Новая заявка*\n📌 Имя: {name}\n📚 Курс: {course}\n🎂 Возраст: {age}\n📍 Город: {city}")
-        return json.dumps({"status": "success", "message": "Заявка успешно добавлена"}), 200, {'Content-Type': 'application/json'}
+        response_data = {"status": "success", "message": "Заявка успешно добавлена"}
+        return json.dumps(response_data, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
     else:
-        return json.dumps({"error": "Ошибка создания заявки в Trello"}), 500, {'Content-Type': 'application/json'}
+        response_data = {"error": "Ошибка создания заявки в Trello"}
+        return json.dumps(response_data, ensure_ascii=False), 500, {'Content-Type': 'application/json'}
 
 # 📌 Обновление заявки в Trello
 @app.route("/update_trello", methods=["PATCH"])
@@ -61,7 +64,8 @@ def update_trello():
     new_value = data.get("new_value")
 
     if not all([name, field, new_value]):
-        return json.dumps({"error": "Не все данные заполнены"}), 400, {'Content-Type': 'application/json'}
+        response = {"error": "Не все данные заполнены"}
+        return json.dumps(response), 400, {'Content-Type': 'application/json'}
 
     # Поиск карточки по имени
     cards_response = requests.get(f"{TRELLO_URL}/boards/{TRELLO_BOARD_ID}/cards",
@@ -69,13 +73,15 @@ def update_trello():
                                   headers=HEADERS)
 
     if cards_response.status_code != 200:
-        return json.dumps({"error": "Ошибка при получении списка карточек"}), 500, {'Content-Type': 'application/json'}
+        response = {"error": "Ошибка при получении списка карточек"}
+        return json.dumps(response), 500, {'Content-Type': 'application/json'}
 
     cards = cards_response.json()
     card = next((c for c in cards if c["name"] == f"Заявка от {name}"), None)
 
     if not card:
-        return json.dumps({"error": "Заявка не найдена"}), 404, {'Content-Type': 'application/json'}
+        response = {"error": "Заявка не найдена"}
+        return json.dumps(response), 404, {'Content-Type': 'application/json'}
 
     card_id = card["id"]
     new_desc = card["desc"].split("\n")
@@ -94,9 +100,11 @@ def update_trello():
 
     if update_response.status_code == 200:
         send_telegram_message(f"🛠 *Обновление заявки*\n📌 Имя: {name}\n✏ Изменено: {field_mapping[field]} → {new_value}")
-        return json.dumps({"status": "success", "message": f"{field_mapping[field]} успешно обновлено"}), 200, {'Content-Type': 'application/json'}
+        response_data = {"status": "success", "message": f"{field_mapping[field]} успешно обновлено"}
+        return json.dumps(response_data, ensure_ascii=False), 200, {'Content-Type': 'application/json'}
     else:
-        return json.dumps({"error": "Ошибка обновления заявки"}), 500, {'Content-Type': 'application/json'}
+        response_data = {"error": "Ошибка обновления заявки"}
+        return json.dumps(response_data, ensure_ascii=False), 500, {'Content-Type': 'application/json'}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
