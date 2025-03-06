@@ -6,8 +6,8 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # 🔑 API-ключи
-TRELLO_API_KEY = "your_trello_api_key"
-TRELLO_TOKEN = "your_trello_token"
+TRELLO_API_KEY = "5880197335c3d727693408202c68375d"
+TRELLO_TOKEN = "API_TOKEN = ATTA1ea4c6edf0b2892fec32580ab1417a42f521cd70c11af1453ddd0a4956e72896C175BE4E"
 TELEGRAM_BOT_TOKEN = "7788946008:AAGULYh-GIkpr-GA3ZA70ERdCAT6BcGNW-g"
 CHAT_ID = "-1002307069728"
 
