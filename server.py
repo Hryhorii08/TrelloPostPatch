@@ -1,112 +1,95 @@
-import os
-import json
-import requests
 from flask import Flask, request, jsonify
+import requests
+import os
 
 app = Flask(__name__)
 
-# 🔑 API-ключи
-TRELLO_API_KEY = "5880197335c3d727693408202c68375d"
-TRELLO_TOKEN = "API_TOKEN = ATTA1ea4c6edf0b2892fec32580ab1417a42f521cd70c11af1453ddd0a4956e72896C175BE4E"
+# 🔑 Токены и настройки
 TELEGRAM_BOT_TOKEN = "7788946008:AAGULYh-GIkpr-GA3ZA70ERdCAT6BcGNW-g"
 CHAT_ID = "-1002307069728"
-
-# 📌 URL для работы с Trello
+TRELLO_API_KEY = "5880197335c3d727693408202c68375d"
+TRELLO_TOKEN = "ATTA1ea4c6edf0b2892fec32580ab1417a42f521cd70c11af1453ddd0a4956e72896C175BE4E"
 TRELLO_LIST_ID = "67c19cd6641117e44ae95227"
 
-# ✅ Функция отправки сообщений в Telegram
+# 📌 URL для Trello API
+TRELLO_URL = "https://api.trello.com/1"
+HEADERS = {"Accept": "application/json"}
+
+# 📌 Функция отправки сообщения в Telegram
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    requests.post(url, data=data)
 
-# 🔹 Функция поиска карточки в Trello по имени
-def find_card(name):
-    url = f"https://api.trello.com/1/boards/{TRELLO_BOARD_ID}/cards"
-    params = {"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        for card in response.json():
-            if card["name"].lower() == f"Заявка от {name}".lower():
-                return card["id"]
-    return None
-
-# 📌 Функция добавления заявки в Trello
+# 📌 Создание новой заявки в Trello
 @app.route("/send_to_trello", methods=["POST"])
 def send_to_trello():
-    try:
-        data = request.json
-        name, course, age, city = data["name"], data["course"], data["age"], data["city"]
+    data = request.json
+    name = data.get("name")
+    course = data.get("course")
+    age = data.get("age")
+    city = data.get("city")
 
-        # Создаем карточку в Trello
-        url = f"https://api.trello.com/1/cards"
-        params = {
-            "name": f"Заявка от {name}",
-            "desc": f"Курс: {course}\nВозраст: {age}\nГород: {city}",
-            "idList": TRELLO_LIST_NAME,
-            "key": TRELLO_API_KEY,
-            "token": TRELLO_TOKEN
-        }
-        response = requests.post(url, params=params)
+    if not all([name, course, age, city]):
+        return jsonify({"error": "Не все данные заполнены"}), 400
 
-        if response.status_code == 200:
-            send_telegram_message(f"✅ *Новая заявка*\n📝 Имя: {name}\n📚 Курс: {course}\n🎂 Возраст: {age}\n📍 Город: {city}")
-            return "Заявка успешно добавлена в Trello и Telegram"
-        else:
-            return jsonify({"error": "Ошибка при создании карточки"}), 500
+    # Создание карточки в Trello
+    query = {
+        "name": f"Заявка от {name}",
+        "desc": f"Курс: {course}\nВозраст: {age}\nГород: {city}",
+        "idList": TRELLO_LIST_ID,
+        "key": TRELLO_API_KEY,
+        "token": TRELLO_TOKEN
+    }
+    response = requests.post(f"{TRELLO_URL}/cards", params=query, headers=HEADERS)
+    
+    if response.status_code == 200:
+        send_telegram_message(f"✅ *Новая заявка*\n📌 Имя: {name}\n📚 Курс: {course}\n🎂 Возраст: {age}\n📍 Город: {city}")
+        return jsonify({"status": "success", "message": "Заявка успешно добавлена"}), 200
+    else:
+        return jsonify({"error": "Ошибка создания заявки в Trello"}), 500
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# 📌 Функция обновления данных заявки в Trello
-@app.route("/update_trello", methods=["PUT"])
+# 📌 Обновление заявки в Trello
+@app.route("/update_trello", methods=["PATCH"])
 def update_trello():
-    try:
-        data = request.json
-        name, field, new_value = data["name"], data["field"], data["new_value"]
+    data = request.json
+    name = data.get("name")
+    field = data.get("field")
+    new_value = data.get("new_value")
 
-        # Ищем карточку по имени
-        card_id = find_card(name)
-        if not card_id:
-            return jsonify({"error": f"Заявка с именем '{name}' не найдена."}), 404
+    if not all([name, field, new_value]):
+        return jsonify({"error": "Не все данные заполнены"}), 400
 
-        # Получаем текущие данные карточки
-        url_card = f"https://api.trello.com/1/cards/{card_id}"
-        params = {"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}
-        response = requests.get(url_card, params=params)
-        
-        if response.status_code != 200:
-            return jsonify({"error": "Ошибка при получении данных карточки"}), 500
-        
-        card_desc = response.json()["desc"]
-        updated_desc = []
+    # Поиск карточки по имени
+    cards_response = requests.get(f"{TRELLO_URL}/boards/{TRELLO_BOARD_ID}/cards", params={"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}, headers=HEADERS)
+    
+    if cards_response.status_code != 200:
+        return jsonify({"error": "Ошибка при получении списка карточек"}), 500
 
-        # Обновляем только нужное поле
-        for line in card_desc.split("\n"):
-            if field.lower() in line.lower():
-                updated_desc.append(f"{field.capitalize()}: {new_value}")
-            else:
-                updated_desc.append(line)
+    cards = cards_response.json()
+    card = next((c for c in cards if c["name"] == f"Заявка от {name}"), None)
 
-        updated_desc_text = "\n".join(updated_desc)
+    if not card:
+        return jsonify({"error": "Заявка не найдена"}), 404
 
-        # Обновляем карточку
-        url_update = f"https://api.trello.com/1/cards/{card_id}"
-        update_params = {
-            "desc": updated_desc_text,
-            "key": TRELLO_API_KEY,
-            "token": TRELLO_TOKEN
-        }
-        update_response = requests.put(url_update, params=update_params)
+    card_id = card["id"]
+    new_desc = card["desc"].split("\n")
 
-        if update_response.status_code == 200:
-            send_telegram_message(f"🔄 *Обновление заявки*\n📝 Имя: {name}\n🖊 Изменено: {field} → {new_value}")
-            return f"Заявка '{name}' успешно обновлена!"
-        else:
-            return jsonify({"error": "Ошибка при обновлении данных"}), 500
+    # Обновляем только указанное поле
+    field_mapping = {"course": "Курс", "age": "Возраст", "city": "Город"}
+    
+    for i, line in enumerate(new_desc):
+        if line.startswith(field_mapping[field]):
+            new_desc[i] = f"{field_mapping[field]}: {new_value}"
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    updated_desc = "\n".join(new_desc)
+    update_response = requests.put(f"{TRELLO_URL}/cards/{card_id}", params={"desc": updated_desc, "key": TRELLO_API_KEY, "token": TRELLO_TOKEN}, headers=HEADERS)
+
+    if update_response.status_code == 200:
+        send_telegram_message(f"🛠 *Обновление заявки*\n📌 Имя: {name}\n✏ Изменено: {field} → {new_value}")
+        return jsonify({"status": "success", "message": f"{field} успешно обновлено"}), 200
+    else:
+        return jsonify({"error": "Ошибка обновления заявки"}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
