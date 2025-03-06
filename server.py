@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
+import json
 
 app = Flask(__name__)
 
@@ -27,7 +28,7 @@ def send_to_trello():
     name, course, age, city = data.get("name"), data.get("course"), data.get("age"), data.get("city")
 
     if not all([name, course, age, city]):
-        return jsonify({"error": "Не все данные заполнены"}), 400
+        return "Ошибка: не все данные заполнены", 400
 
     query = {
         "name": f"Заявка от {name}",
@@ -40,9 +41,9 @@ def send_to_trello():
 
     if response.status_code == 200:
         send_telegram_message(f"✅ *Новая заявка*\n📌 Имя: {name}\n📚 Курс: {course}\n🎂 Возраст: {age}\n📍 Город: {city}")
-        return jsonify({"status": "success", "message": "Заявка успешно добавлена"}), 200
+        return "Заявка успешно добавлена", 200
     else:
-        return jsonify({"error": "Ошибка создания заявки в Trello"}), 500
+        return "Ошибка создания заявки в Trello", 500
 
 # 📌 Обновление заявки в Trello
 @app.route("/update_trello", methods=["PATCH"])
@@ -51,19 +52,19 @@ def update_trello():
     name, field, new_value = data.get("name"), data.get("field"), data.get("new_value")
 
     if not all([name, field, new_value]):
-        return jsonify({"error": "Не все данные заполнены"}), 400
+        return "Ошибка: не все данные заполнены", 400
 
     cards_response = requests.get(f"{TRELLO_URL}/boards/{TRELLO_BOARD_ID}/cards",
                                   params={"key": TRELLO_API_KEY, "token": TRELLO_TOKEN}, headers=HEADERS)
 
     if cards_response.status_code != 200:
-        return jsonify({"error": "Ошибка при получении списка карточек"}), 500
+        return "Ошибка при получении списка карточек", 500
 
     cards = cards_response.json()
     card = next((c for c in cards if c["name"] == f"Заявка от {name}"), None)
 
     if not card:
-        return jsonify({"error": "Заявка не найдена"}), 404
+        return "Заявка не найдена", 404
 
     card_id = card["id"]
     new_desc = card["desc"].split("\n")
@@ -81,16 +82,9 @@ def update_trello():
 
     if update_response.status_code == 200:
         send_telegram_message(f"🛠 *Обновление заявки*\n📌 Имя: {name}\n✏ Изменено: {field} → {new_value}")
-        return jsonify({"status": "success", "message": f"{field} успешно обновлено"}), 200
+        return f"{field} успешно обновлено", 200
     else:
-        return jsonify({"error": "Ошибка обновления заявки"}), 500
-
-# 📌 Гарантия возврата корректного JSON
-@app.errorhandler(500)
-@app.errorhandler(400)
-@app.errorhandler(404)
-def handle_error(e):
-    return jsonify({"error": str(e)}), e.code
+        return "Ошибка обновления заявки", 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
